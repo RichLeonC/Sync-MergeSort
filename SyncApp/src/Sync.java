@@ -6,6 +6,8 @@
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.concurrent.Semaphore;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 class Barrier {
 
@@ -27,37 +29,52 @@ class Barrier {
     }
 }
 
+
 class Semaforo {
 
     private int r;
     private Semaphore s;
-
+    private Semaforo INSTANCE = new Semaforo();
+    
     public Semaforo() {
         this.r = 2;
     }
+    
+    public static Semaforo getConnection(){
+        return INSTANCE;
+    }
 
     public synchronized void increment() {
-        while (isAvailable()) {
             try {
-                this.wait();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+                r++;
+            } catch (Exception ex) {
+                Logger.getLogger(Semaforo.class.getName()).log(Level.SEVERE, null, ex);
+            }
+    }
+    
+    public synchronized void connect(){
+        try{
+            s.acquire();
+            
+            increment();
+            this.wait(2000);
+            decrement();
+        }
+        catch(Exception e){
+            e.printStackTrace();
+        }finally{
+            if(s != null){
+                s.release();
             }
         }
-        r++;
-        this.notifyAll();
     }
 
     public synchronized void decrement() {
-        while (!isAvailable()) {
-            try {
-                this.wait();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+        try {
+            r--;
+        } catch (Exception ex) {
+            Logger.getLogger(Semaforo.class.getName()).log(Level.SEVERE, null, ex);
         }
-        r--;
-        this.notifyAll();
     }
 
     private synchronized boolean isAvailable() {
@@ -183,6 +200,45 @@ class MergeSort extends Thread {
            merge(arr, inicio, medio, fin,sync);
         }
     }
+    
+    public static void mergeSort(int[] a, int n) {
+       if (n < 2) {
+           return;
+       }
+       int mid = n / 2;
+       int[] l = new int[mid];
+       int[] r = new int[n - mid];
+
+       for (int i = 0; i < mid; i++) {
+           l[i] = a[i];
+       }
+       for (int i = mid; i < n; i++) {
+           r[i - mid] = a[i];
+       }
+       mergeSort(l, mid);
+       mergeSort(r, n - mid);
+
+       merge(a, l, r, mid, n - mid);
+   }
+    
+    public static void merge(int[] a, int[] l, int[] r, int left, int right) {
+
+        int i = 0, j = 0, k = 0;
+        while (i < left && j < right) {
+            if (l[i] <= r[j]) {
+                a[k++] = l[i++];
+            }
+            else {
+                a[k++] = r[j++];
+            }
+        }
+        while (i < left) {
+            a[k++] = l[i++];
+        }
+        while (j < right) {
+            a[k++] = r[j++];
+        }
+      }
 
     private static void merge(int[] arr, int inicio, int medio, int fin, SyncLib sync) {
       //  System.out.println("Entro al merge");
