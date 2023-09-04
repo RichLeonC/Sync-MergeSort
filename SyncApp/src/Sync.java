@@ -144,76 +144,73 @@ class MergeSort {
     private static final Semaphore s = new Semaphore(Runtime.getRuntime().availableProcessors());
 
     // Custom Thread class with constructors
-    private static class SortThreads extends Thread {
+       private static class SortThreads extends Thread {
+        private Integer[] array;
+        private int begin, end;
 
         SortThreads(Integer[] array, int begin, int end) {
-            super(() -> {
-                mergeSort(array, begin, end);
-            });
+            this.array = array;
+            this.begin = begin;
+            this.end = end;
+        }
 
-
-            this.start();
+        @Override
+        public void run() {
+            mergeSort(array, begin, end);
+            try {
+                s.acquire(); // Adquirir el semáforo
+                barrier.await(); // Esperar en la barrera
+                s.release(); // Liberar el semáforo
+            } catch (InterruptedException | BrokenBarrierException e) {
+                e.printStackTrace();
+            }
         }
     }
 
-    // Perform Threaded merge sort
     public static void threadedSort(Integer[] array) {
         System.out.println("MAX THREADS: " + MAX_THREADS);
 
         long time = System.currentTimeMillis();
         final int length = array.length;
-        boolean exact = length % MAX_THREADS == 0;
-        int maxlim = exact ? length / MAX_THREADS : length / (MAX_THREADS - 1);
-        maxlim = maxlim < MAX_THREADS ? MAX_THREADS : maxlim;
         final ArrayList<SortThreads> threads = new ArrayList<>();
-        for (int i = 0; i < length; i += maxlim) {
-            int beg = i;
-            int remain = (length) - i;
-            int end = remain < maxlim ? i + (remain - 1) : i + (maxlim - 1);
-            final SortThreads t = new SortThreads(array, beg, end);
-            // Add the thread references to join them later
+        for (int i = 0; i < MAX_THREADS; i++) {
+            int begin = i * (length / MAX_THREADS);
+            int end = (i + 1) * (length / MAX_THREADS) - 1;
+            final SortThreads t = new SortThreads(array, begin, end);
             threads.add(t);
+            t.start();
         }
-        for (Thread t : threads) {
+
+        for (SortThreads t : threads) {
             try {
                 t.join();
             } catch (InterruptedException ignored) {
             }
         }
-        for (int i = 0; i < length; i += maxlim) {
-            int mid = i == 0 ? 0 : i - 1;
-            int remain = (length) - i;
-            int end = remain < maxlim ? i + (remain - 1) : i + (maxlim - 1);
 
-            merge(array, 0, mid, end);
-
+        for (int i = 1; i < MAX_THREADS; i++) {
+            merge(array, 0, i * (length / MAX_THREADS) - 1, (i + 1) * (length / MAX_THREADS) - 1);
         }
+
         time = System.currentTimeMillis() - time;
-        System.out.println("Time spent for custom multi-threaded recursive merge_sort(): " + time + "ms");
+        System.out.println("Time spent for custom multi-threaded merge_sort(): " + time + "ms");
     }
 
-    // Typical recursive merge sort
     public static void mergeSort(Integer[] array, int begin, int end) {
         if (begin < end) {
-            //  s.acquire();
-            
             int mid = (begin + end) / 2;
             mergeSort(array, begin, mid);
             mergeSort(array, mid + 1, end);
             merge(array, begin, mid, end);
-            //s.release();
         }
+    }
 
-        }
-        //Typical 2-way merge
     public static void merge(Integer[] array, int begin, int mid, int end) {
         Integer[] temp = new Integer[(end - begin) + 1];
 
         int i = begin, j = mid + 1;
         int k = 0;
 
-        // Add elements from first half or second half based on whichever is lower,
-        // do until one of the list is exhausted and no more direct one-to-one comparison could be made
         while (i <= mid && j <= end) {
             if (array[i] <= array[j]) {
                 temp[k] = array[i];
@@ -225,14 +222,11 @@ class MergeSort {
             k += 1;
         }
 
-        // Add remaining elements to temp array from first half that are left over
         while (i <= mid) {
             temp[k] = array[i];
             i += 1;
             k += 1;
         }
-
-        // Add remaining elements to temp array from second half that are left over
         while (j <= end) {
             temp[k] = array[j];
             j += 1;
@@ -242,7 +236,6 @@ class MergeSort {
         for (i = begin, k = 0; i <= end; i++, k++) {
             array[i] = temp[k];
         }
-
     }
 
 }
