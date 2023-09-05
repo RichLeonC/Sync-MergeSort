@@ -5,15 +5,12 @@
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
-import java.util.concurrent.BrokenBarrierException;
-import java.util.concurrent.CyclicBarrier;
+import java.util.Random;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+
 
 class Barrier {
 
@@ -24,6 +21,7 @@ class Barrier {
         this.totalThreads = totalThreads;
     }
 
+    //Coloca todos los hilos en espera hasta que se llegue al contador esperado
     public synchronized void esperar() throws InterruptedException {
         waitingThreads++;
 
@@ -45,12 +43,14 @@ class Semaforo {
     public Semaforo(int permits) {
         this.permits = permits;
     }
-
-    public void adquirir() throws InterruptedException {
+ 
+    //Se utiliza para adiquirir un permiso del semaforo, si no hay permisos, el hilo que
+    //llama a este metodo se bloqueara hasta que se libere un permiso
+    public synchronized void adquirir() throws InterruptedException {
         lock.lock();
         try {
             if (permits == 0) {
-                condition.await();
+                wait();
             }
             permits--;
         } finally {
@@ -58,11 +58,13 @@ class Semaforo {
         }
     }
 
-    public void liberar() {
+    //Sirve para liberar un permiso del seamaforo, incrementa el contador de permisos disponibles
+    //luego con el notify desbloquea cualquier hilo que este en espera.
+    public synchronized void liberar() {
         lock.lock();
         try {
             permits++;
-            condition.signal();
+            notifyAll();   
         } finally {
             lock.unlock();
         }
@@ -72,14 +74,16 @@ class Semaforo {
 class Monitor {
 
     private boolean ocupado = false;
-
+    
+    //Si esta ocupado, pone el hilo en espera
     public synchronized void entrar() throws InterruptedException {
-        while (ocupado) {
+        if (ocupado) {
             wait();
         }
         ocupado = true;
     }
 
+    //Si no, desbloquea el hilo
     public synchronized void salir() {
         ocupado = false;
         notify();
@@ -94,7 +98,7 @@ class SyncLib {
 
     public SyncLib(int capacity) {
         this.barrera = new Barrier(capacity);
-        this.semaforo = new Semaforo(1);
+        this.semaforo = new Semaforo(capacity);
         this.monitor = new Monitor();
     }
 
@@ -114,12 +118,12 @@ class SyncLib {
         barrera.esperar();
     }
 
-    public void incrementSemaforo() throws InterruptedException {
+    public void adquirir() throws InterruptedException {
         semaforo.adquirir();
 
     }
 
-    public void decrementSemaforo() {
+    public void liberar() {
         semaforo.liberar();
 
     }
@@ -136,15 +140,17 @@ class SyncLib {
 
 }
 
+
+//Algoritmo Merge Sort obtenido de GeeksforGeeks y adaptado al ejercicio requerido con la threads y la biblioteca sync
+//Link: https://www.geeksforgeeks.org/merge-sort-using-multi-threading/
 class MergeSort {
 
-    // Assuming system has 4 logical processors
-    private static final int MAX_THREADS = Runtime.getRuntime().availableProcessors();
-    private static final CyclicBarrier barrier = new CyclicBarrier(Runtime.getRuntime().availableProcessors());
-    private static final Semaphore s = new Semaphore(Runtime.getRuntime().availableProcessors());
+    
+    private static final int MAX_THREADS = 2;
+    private static final SyncLib sync = new SyncLib(MAX_THREADS);
 
-    // Custom Thread class with constructors
-       private static class SortThreads extends Thread {
+    private static class SortThreads extends Thread {
+
         private Integer[] array;
         private int begin, end;
 
@@ -156,20 +162,18 @@ class MergeSort {
 
         @Override
         public void run() {
-            mergeSort(array, begin, end);
+            
             try {
-                s.acquire(); // Adquirir el semáforo
-                barrier.await(); // Esperar en la barrera
-                s.release(); // Liberar el semáforo
-            } catch (InterruptedException | BrokenBarrierException e) {
+                sync.adquirir(); // Adquirir el semáforo
+                mergeSort(array, begin, end);
+                sync.liberar(); // Liberar el semáforo
+            } catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }
     }
 
     public static void threadedSort(Integer[] array) {
-        System.out.println("MAX THREADS: " + MAX_THREADS);
-
         long time = System.currentTimeMillis();
         final int length = array.length;
         final ArrayList<SortThreads> threads = new ArrayList<>();
@@ -240,93 +244,22 @@ class MergeSort {
 
 }
 
-class MergeSortWithThreads {
-
-    private static final SyncLib sync = new SyncLib(2);
-    private static final Semaphore s = new Semaphore(2);
-
-    //private static final CyclicBarrier barrier = new CyclicBarrier(Runtime.getRuntime().availableProcessors());
-    public static void mergeSort(int[] array) throws InterruptedException {
-        // sync.incrementSemaforo(); // Adquirir el semáforo antes de realizar la fusión
-        //s.acquire();
-        int length = array.length;
-        if (length < 2) {
-            return;
-        }
-
-        int mid = length / 2;
-        int[] leftArray = Arrays.copyOfRange(array, 0, mid);
-        int[] rightArray = Arrays.copyOfRange(array, mid, length);
-
-        Thread leftThread = new Thread(() -> {
-            try {
-                mergeSort(leftArray);
-            } catch (InterruptedException ex) {
-                Logger.getLogger(MergeSortWithThreads.class.getName()).log(Level.SEVERE, null, ex);
-            }
-        });
-
-        Thread rightThread = new Thread(() -> {
-            try {
-                mergeSort(rightArray);
-            } catch (InterruptedException ex) {
-                Logger.getLogger(MergeSortWithThreads.class.getName()).log(Level.SEVERE, null, ex);
-            }
-        });
-
-        leftThread.start();
-        rightThread.start();
-        // sync.decrementSemaforo();
-
-        try {
-            leftThread.join();
-            rightThread.join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-        merge(array, leftArray, rightArray);
-    }
-
-    public static void merge(int[] array, int[] leftArray, int[] rightArray) throws InterruptedException {
-        s.acquire();
-
-        int leftLength = leftArray.length;
-        int rightLength = rightArray.length;
-
-        int i = 0, j = 0, k = 0;
-
-        while (i < leftLength && j < rightLength) {
-            if (leftArray[i] < rightArray[j]) {
-                array[k++] = leftArray[i++];
-            } else {
-                array[k++] = rightArray[j++];
-            }
-        }
-
-        while (i < leftLength) {
-            array[k++] = leftArray[i++];
-        }
-
-        while (j < rightLength) {
-            array[k++] = rightArray[j++];
-        }
-
-        s.release();
-
-    }
-}
-
 public class Sync {
+
+    public static Integer[] generateRandomArray(int length) {
+        Integer[] array = new Integer[length];
+        Random random = new Random();
+        for (int i = 0; i < length; i++) {
+            array[i] = random.nextInt(1000); // Números aleatorios entre 0 y 999
+        }
+        return array;
+    }
 
     public static void main(String[] args) throws InterruptedException {
         Integer[] arr = {83, 86, 77, 15, 93, 35, 86, 92, 49, 21,
             62, 27, 90, 59, 63, 26, 40, 26, 72, 36};
-
-        // SyncLib syncLib = new SyncLib(2); // Cambia el valor según la cantidad de hilos que deseas utilizar
-        //  MergeSort merge = new MergeSort();
+        Integer[] arr2 = generateRandomArray(10000);
         MergeSort.threadedSort(arr);
-        // MergeSortWithThreads.mergeSort(arr);
 
         System.out.println("Arreglo con Threads ordenado: " + Arrays.toString(arr));
     }
